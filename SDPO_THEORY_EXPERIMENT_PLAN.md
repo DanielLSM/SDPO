@@ -6,12 +6,13 @@ This document captures a practical implementation plan for the theory-driven exp
 
 The appendix frames these as **best-arm identification** experiments, which is why the shorthand **BAI** comes up.
 
-For this repo, a clearer name is better. In code and docs, we should refer to these as:
+For this repo, we should separate the human-facing name from the implementation slug:
 
-- **SDPO theory experiments**, or
-- **one-bit feedback bandit experiments**
+- **Human-facing name:** **SDPO theory experiments**
+- **Descriptive alternate label:** **one-bit feedback bandit experiments**
+- **Code/package slug:** `one_bit_sdpo`
 
-That says what they are without forcing readers to decode the acronym.
+That keeps the docs readable while giving the implementation a short, concrete name.
 
 ## High-level recommendation
 
@@ -30,7 +31,18 @@ That is much closer to a standalone simulator / theory-validation harness than t
 So the right move is:
 
 - follow the repo’s **experiment organization and SDPO semantics**
-- but implement the theory work as a **small standalone top-level experiment module**
+- but implement the theory work as a **small standalone experiment harness**
+
+## Repo fit
+
+This branch already contains several pieces we want to preserve conceptually:
+
+- teacher/student SDPO loss semantics
+- forward / reverse / interpolated KL behavior through `alpha`
+- feedback-conditioned teacher logic
+- existing experiment-script and sweep patterns
+
+The mismatch is structural: the current trainer is designed for normal free-form sequence rollouts, while Appendix B is a much tighter one-token online protocol. So the implementation should be adjacent to the repo’s SDPO logic, not jammed directly into the main PPO path.
 
 ## Scope
 
@@ -116,14 +128,17 @@ Only after the oracle suite is working should we add the model-based version.
 
 This phase implements the Appendix-B style loop:
 
+- load a base instruct model plus optional lightweight adapters
+- verify arm labels like `A`, `B`, `C`, ... are single tokenizer tokens
 - create a base prompt from frozen bandit summary statistics
-- extract restricted probabilities over arm-label tokens
+- extract restricted probabilities over arm-label tokens only
 - sample a proposal arm
 - sample one-bit feedback
 - build the conditioned teacher prompt
-- compute teacher distribution over arm-label tokens
+- compute teacher distribution over the same restricted label set
 - apply a student-teacher KL step
 - fine-tune only lightweight parameters first (for example LoRA)
+- run the exact oracle on the same `(Y_k, F_k)` stream for direct comparison
 
 This phase is needed for:
 
@@ -135,6 +150,20 @@ This phase is needed for:
 This should still be implemented as a separate theory harness, not by heavily mutating the main SDPO PPO path.
 
 The main repo trainer is solving a different systems problem.
+
+## Phase 5 — plotting and sweep utilities
+
+Once the oracle and model-linked loops exist, add a thin analysis layer for the plots recommended in Appendix B:
+
+- KL trajectories
+- arm-probability trajectories
+- oracle-gap trajectories
+- conditioning-error trajectories
+- informativeness sweep summaries
+- misalignment sweep summaries
+- reverse-KL oscillation plots
+
+This should stay lightweight and sit next to the theory harness, not inside the generic trainer.
 
 ## Recommended experiment order
 
@@ -151,29 +180,26 @@ This gets the strongest signal fastest while keeping implementation risk low.
 
 ## Proposed repo layout
 
-A clean layout would look something like this:
+A cleaner merged layout is to keep everything under a dedicated experiment package:
 
 ```text
 SDPO/
 ├── SDPO_THEORY_EXPERIMENT_PLAN.md
 ├── experiments/
-│   └── theory/
-│       ├── run_forward_convergence.sh
-│       ├── run_forward_self_consistency.sh
-│       ├── run_informativeness_sweep.sh
-│       ├── run_misalignment_sweep.sh
-│       ├── run_reverse_dynamics.sh
-│       └── run_conditioning_diagnostic.sh
-├── theory_bandit/
-│   ├── __init__.py
-│   ├── instances.py
-│   ├── posterior.py
-│   ├── proposals.py
-│   ├── feedback.py
-│   ├── oracle_updates.py
-│   ├── metrics.py
-│   ├── runner.py
-│   └── plots.py
+│   └── one_bit_sdpo/
+│       ├── README.md
+│       ├── instances.py
+│       ├── posterior.py
+│       ├── proposals.py
+│       ├── feedback.py
+│       ├── oracle.py
+│       ├── prompts.py
+│       ├── metrics.py
+│       ├── runner.py
+│       ├── plots.py
+│       ├── run_one_bit_sdpo.py
+│       ├── config/
+│       └── scripts/
 └── tests/
     └── theory/
         ├── test_forward_projection_on_cpu.py
@@ -181,11 +207,14 @@ SDPO/
         └── test_reverse_projection_on_cpu.py
 ```
 
-The exact names can change, but the important design choice is separation:
+Why this is better:
 
-- `experiments/theory/` for launch scripts
-- `theory_bandit/` for the actual logic
-- `tests/theory/` for CPU validation
+- `experiments/one_bit_sdpo/` gives the work a concrete home
+- oracle logic, prompt logic, runners, and plots stay together
+- it still remains clearly separate from the generic PPO trainer
+- tests stay cheap and CPU-oriented
+
+A later optional step would be to move truly reusable helpers into `verl/utils/`, but only if the theory harness actually produces shared logic worth keeping.
 
 ## Metrics to log
 
@@ -198,12 +227,34 @@ For the oracle harness, log at least:
 - step size
 - proposal arm
 - sampled feedback bit
+- top-arm switch count
+- oscillation amplitude
+- distance to the simplex boundary
+
+For the forward-KL runs, also log the predicted decrement / observed decrement mismatch from the theory where applicable.
 
 For the LLM-linked phase, also log:
 
 - teacher-student KL
 - conditioning error against exact teacher
 - oracle-vs-model trajectory gap
+
+## What to reuse vs. build fresh
+
+### Reuse from the repo
+
+- SDPO loss semantics
+- optimizer / config conventions
+- experiment and sweep script style
+- teacher / student naming and logging conventions
+
+### Build fresh for this plan
+
+- exact Gaussian-bandit oracle
+- restricted label-only probability extraction
+- one-bit feedback simulation
+- paper-specific metrics and plots
+- the dedicated `one_bit_sdpo` runner
 
 ## Suggested initial instance set
 
@@ -236,10 +287,11 @@ These are enough to expose:
 
 The right first milestone is:
 
-- build the standalone theory harness
-- implement the oracle dynamics
+- build a dedicated `experiments/one_bit_sdpo/` theory harness
+- implement the oracle dynamics first
 - run experiments **1, 2, 4, 5** first
 - add reverse-KL after that
 - only then add the LLM conditioning diagnostic
+- add plotting and sweep polish once the core dynamics are trustworthy
 
 That gets us fast, interpretable progress without contaminating the main training stack.
