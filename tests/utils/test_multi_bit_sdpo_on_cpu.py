@@ -8,6 +8,8 @@ from experiments.multi_bit_sdpo.oracle import (
     forward_branch_update,
     reverse_branch_update,
 )
+from experiments.multi_bit_sdpo.posterior import ExplorationSummary
+from experiments.multi_bit_sdpo.prompts import build_conditioned_prompt, build_history_prompt
 from experiments.multi_bit_sdpo.run_oracle_experiments import _write_csv
 from experiments.multi_bit_sdpo.runner import OracleRunConfig, run_single_seed
 
@@ -108,3 +110,36 @@ def test_multi_bit_sdpo_csv_export_handles_mixed_arm_counts(tmp_path) -> None:
     text = output_path.read_text(encoding="utf-8")
     assert "pi_E" in text
     assert "Medium-5" in text
+
+
+def test_multi_bit_sdpo_conditioned_prompt_uses_chat_history_format() -> None:
+    summary = ExplorationSummary(
+        counts=(20, 20),
+        sample_means=(0.8, 0.2),
+        posterior_means=(0.79, 0.21),
+        posterior_stds=(0.1, 0.1),
+    )
+
+    messages = build_conditioned_prompt(summary, proposal=0, feedback=1, alpha=0.9, beta=0.1)
+
+    assert [message["role"] for message in messages] == ["system", "user", "assistant", "user"]
+    assert messages[2]["content"] == "A"
+    assert "feedback was CORRECT" in messages[3]["content"]
+    assert "Answer with a single letter." in messages[3]["content"]
+
+
+def test_multi_bit_sdpo_history_prompt_accumulates_feedback_rounds() -> None:
+    summary = ExplorationSummary(
+        counts=(15, 15, 15),
+        sample_means=(0.7, 0.5, 0.3),
+        posterior_means=(0.69, 0.5, 0.31),
+        posterior_stds=(0.2, 0.2, 0.2),
+    )
+
+    messages = build_history_prompt(summary, history=[(0, 1), (2, 0)], alpha=0.9, beta=0.1)
+
+    assert [message["role"] for message in messages] == ["system", "user", "assistant", "user", "assistant", "user"]
+    assert messages[2]["content"] == "A"
+    assert messages[4]["content"] == "C"
+    assert "feedback was CORRECT" in messages[3]["content"]
+    assert "feedback was INCORRECT" in messages[5]["content"]

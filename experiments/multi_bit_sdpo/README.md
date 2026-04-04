@@ -15,7 +15,7 @@ This first implementation covers the **exact oracle dynamics** on CPU:
 - JSONL logging, summary output, and CSV sweep export
 - CPU tests for the key theory identities
 
-The LLM-conditioned phase is intentionally left for later, after the oracle path is trusted.
+The oracle path is now trusted enough that the harness also includes a **minimal LLM-conditioned rollout probe** on GPU. This is still not the full training loop: it iteratively conditions the prompt on proposal/feedback history and measures the restricted label distribution after each round.
 
 ## Layout
 
@@ -24,11 +24,13 @@ The LLM-conditioned phase is intentionally left for later, after the oracle path
 - `proposals.py` — proposal distributions
 - `feedback.py` — feedback channel and misalignment helpers
 - `oracle.py` — exact teacher and oracle updates
-- `prompts.py` — prompt helpers for the later LLM phase
+- `prompts.py` — prompt helpers for the LLM-conditioned phase
 - `runner.py` — configurable JSONL/summary oracle runner
 - `run_oracle_experiments.py` — paper-default sweep driver with CSV export
 - `plots.py` — lightweight plotting helper
+- `llm_backend.py` — shared runtime/model helpers for GPU-side probes
 - `gpu_smoke.py` — first GPU smoke layer for restricted label-logit extraction
+- `llm_rollout.py` — minimal multi-step LLM-conditioned rollout on fixed exploration summaries
 - `scripts/` — shell wrappers for common runs
 
 ## Example usage
@@ -83,8 +85,22 @@ This runs a tiny LLM-side check that:
 - computes restricted next-token probabilities over arm labels for the base prompt
 - recomputes them for positive and negative conditioned prompts
 
+Minimal multi-step LLM-conditioned rollout:
+
+```bash
+bash experiments/multi_bit_sdpo/scripts/run_llm_rollout.sh
+```
+
+This runs a first iterative prompt-conditioned probe that:
+- starts from the base summary prompt
+- samples proposals from the current restricted label distribution
+- samples noisy feedback from the chosen `pgen` mode
+- appends proposal/feedback history to the chat transcript
+- re-evaluates the next restricted label distribution after each round
+
 ## Notes
 
 - The project name is `multi_bit_sdpo`, even though the first oracle protocol currently uses one-bit feedback. The name is intentionally broader so richer feedback variants can live in the same harness later.
 - The current runner uses the **branchwise oracle update** driven by the sampled proposal. That matches the stochastic-iteration viewpoint used in the theory note.
 - `gpu_smoke.py` is intentionally a smoke layer, not the full training loop: it only checks model loading, label-token extraction, and conditioned-vs-base next-token distributions on GPU.
+- `llm_rollout.py` is the first multi-step bridge between the oracle harness and a real model: it performs repeated prompt conditioning on proposal/feedback history, but it does **not** update model weights or integrate with the PPO trainer yet.

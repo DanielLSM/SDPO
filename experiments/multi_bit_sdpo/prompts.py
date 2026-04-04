@@ -54,6 +54,36 @@ def build_base_prompt(summary: ExplorationSummary) -> list[dict[str, str]]:
     ]
 
 
+def build_feedback_followup_message(proposal_label: str, feedback: int, alpha: float, beta: float) -> str:
+    verdict = "CORRECT" if feedback == 1 else "INCORRECT"
+    return (
+        f"Feedback on your previous guess: arm {proposal_label} was checked and the feedback was {verdict}. "
+        f"The feedback channel is noisy: if the proposed arm is truly optimal it is marked CORRECT with probability {alpha:.3f}; "
+        f"if it is not optimal it is still marked CORRECT with probability {beta:.3f}. "
+        "Given this updated information, which arm is now most likely to have the highest true mean? "
+        "Answer with a single letter."
+    )
+
+
+def build_history_prompt(
+    summary: ExplorationSummary,
+    history: list[tuple[int, int]],
+    alpha: float,
+    beta: float,
+) -> list[dict[str, str]]:
+    messages = build_base_prompt(summary)
+    labels = arm_labels(len(summary.counts))
+    for proposal, feedback in history:
+        messages.append({"role": "assistant", "content": labels[proposal]})
+        messages.append(
+            {
+                "role": "user",
+                "content": build_feedback_followup_message(labels[proposal], feedback, alpha, beta),
+            }
+        )
+    return messages
+
+
 def build_conditioned_prompt(
     summary: ExplorationSummary,
     proposal: int,
@@ -61,14 +91,4 @@ def build_conditioned_prompt(
     alpha: float,
     beta: float,
 ) -> list[dict[str, str]]:
-    messages = build_base_prompt(summary)
-    label = arm_labels(len(summary.counts))[proposal]
-    verdict = "CORRECT" if feedback == 1 else "INCORRECT"
-    extra = (
-        f"Additional information: arm {label} was checked and the feedback was {verdict}. "
-        f"The feedback channel is noisy: if the proposed arm is truly optimal it is marked CORRECT with probability {alpha:.3f}; "
-        f"if it is not optimal it is still marked CORRECT with probability {beta:.3f}. "
-        "Given this additional information, which arm is now most likely to have the highest true mean? "
-        "Answer with a single letter."
-    )
-    return [messages[0], {"role": "user", "content": messages[1]["content"] + "\n\n" + extra}]
+    return build_history_prompt(summary, history=[(proposal, feedback)], alpha=alpha, beta=beta)
