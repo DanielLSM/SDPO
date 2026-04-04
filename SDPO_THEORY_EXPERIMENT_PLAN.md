@@ -8,7 +8,7 @@ The appendix frames these as **best-arm identification** experiments, which is w
 
 For this repo, we should separate the human-facing name from the implementation slug:
 
-- **Human-facing name:** **multi_bit_SDPO**
+- **Human-facing name:** **multi_bit_sdpo**
 - **Descriptive long-form label:** **SDPO theory experiments**
 - **Code/package slug:** `multi_bit_sdpo`
 
