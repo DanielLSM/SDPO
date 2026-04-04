@@ -8,6 +8,7 @@ from experiments.multi_bit_sdpo.oracle import (
     forward_branch_update,
     reverse_branch_update,
 )
+from experiments.multi_bit_sdpo.run_oracle_experiments import _write_csv
 from experiments.multi_bit_sdpo.runner import OracleRunConfig, run_single_seed
 
 
@@ -80,3 +81,30 @@ def test_multi_bit_sdpo_forward_self_consistency_rollout_has_zero_drift() -> Non
 
     assert result.trajectory
     assert all(abs(float(record["step_size_l1"])) < 1e-12 for record in result.trajectory)
+
+
+def test_multi_bit_sdpo_csv_export_handles_mixed_arm_counts(tmp_path) -> None:
+    output_path = tmp_path / "forward_convergence.csv"
+    rows = [
+        {
+            "experiment": "forward_convergence",
+            "instance_name": "Easy-2",
+            "pi_A": 0.6,
+            "pi_B": 0.4,
+        },
+        {
+            "experiment": "forward_convergence",
+            "instance_name": "Medium-5",
+            "pi_A": 0.4,
+            "pi_B": 0.25,
+            "pi_C": 0.15,
+            "pi_D": 0.10,
+            "pi_E": 0.10,
+        },
+    ]
+
+    _write_csv(rows, output_path)
+
+    text = output_path.read_text(encoding="utf-8")
+    assert "pi_E" in text
+    assert "Medium-5" in text

@@ -197,11 +197,22 @@ def _flatten_record(config: OracleRunConfig, seed: int, record: dict[str, Any]) 
     return row
 
 
+def _ordered_fieldnames(rows: list[dict[str, Any]]) -> list[str]:
+    fieldnames: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        for key in row:
+            if key not in seen:
+                seen.add(key)
+                fieldnames.append(key)
+    return fieldnames
+
+
 def _write_csv(rows: list[dict[str, Any]], output_path: Path) -> None:
     if not rows:
         raise ValueError("No rows to write.")
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = list(rows[0].keys())
+    fieldnames = _ordered_fieldnames(rows)
     with output_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
