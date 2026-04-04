@@ -12,7 +12,7 @@ This first implementation covers the **exact oracle dynamics** on CPU:
 - epsilon-greedy and temperature-plus-epsilon proposal rules
 - one-bit feedback simulation with `(alpha, beta)`
 - exact forward-KL and reverse-KL oracle branch updates
-- JSONL logging and summary output
+- JSONL logging, summary output, and CSV sweep export
 - CPU tests for the key theory identities
 
 The LLM-conditioned phase is intentionally left for later, after the oracle path is trusted.
@@ -25,7 +25,8 @@ The LLM-conditioned phase is intentionally left for later, after the oracle path
 - `feedback.py` — feedback channel and misalignment helpers
 - `oracle.py` — exact teacher and oracle updates
 - `prompts.py` — prompt helpers for the later LLM phase
-- `runner.py` — CLI entrypoint for oracle experiments
+- `runner.py` — configurable JSONL/summary oracle runner
+- `run_oracle_experiments.py` — paper-default sweep driver with CSV export
 - `plots.py` — lightweight plotting helper
 - `scripts/` — shell wrappers for common runs
 
@@ -43,7 +44,15 @@ python -m experiments.multi_bit_sdpo.runner \
   --seeds 0 1 2
 ```
 
-Truth-driven forward KL with the appendix-style defaults:
+Paper-default forward-KL sweep with CSV output:
+
+```bash
+python experiments/multi_bit_sdpo/run_oracle_experiments.py \
+  --experiment forward_convergence \
+  --output-dir outputs/multi_bit_sdpo
+```
+
+Truth-driven forward KL with the lighter single-config runner:
 
 ```bash
 bash experiments/multi_bit_sdpo/scripts/run_forward_convergence.sh

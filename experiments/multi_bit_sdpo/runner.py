@@ -19,8 +19,9 @@ from .metrics import (
     top_arm_switch_count,
     total_variation,
 )
-from .oracle import exact_teacher_distribution, forward_branch_update, reverse_branch_update
+from .oracle import bernoulli_kl, exact_teacher_distribution, forward_branch_update, reverse_branch_update
 from .posterior import estimate_oracle_posterior, sample_exploration_summary
+from .prompts import arm_labels
 from .proposals import proposal_distribution, sample_proposal
 
 
@@ -81,17 +82,23 @@ def _initial_policy(mode: str, p_star: np.ndarray, posterior_means: tuple[float,
     raise ValueError(f"Unknown initial policy mode '{mode}'")
 
 
-def _resolve_pgen(config: OracleRunConfig, p_star: np.ndarray, policy: np.ndarray, instance_best_arm: int) -> np.ndarray:
+def _resolve_pgen(
+    config: OracleRunConfig,
+    p_star: np.ndarray,
+    policy: np.ndarray,
+    instance_best_arm: int,
+) -> tuple[np.ndarray, int | None]:
     if config.pgen_mode == "truth":
-        return p_star.copy()
+        return p_star.copy(), None
     if config.pgen_mode == "self":
-        return policy.copy()
+        return policy.copy(), None
     if config.pgen_mode == "misaligned":
         contaminating_arm = config.contaminating_arm
         if contaminating_arm is None:
-            candidates = [idx for idx in range(len(p_star)) if idx != instance_best_arm]
-            contaminating_arm = candidates[-1] if candidates else instance_best_arm
-        return build_misaligned_distribution(p_star, config.misalignment_lambda, contaminating_arm)
+            descending = np.argsort(-p_star)
+            contamination_candidates = [idx for idx in descending if idx != instance_best_arm]
+            contaminating_arm = int(contamination_candidates[0]) if contamination_candidates else instance_best_arm
+        return build_misaligned_distribution(p_star, config.misalignment_lambda, contaminating_arm), contaminating_arm
     raise ValueError(f"Unknown pgen_mode '{config.pgen_mode}'")
 
 
@@ -105,6 +112,7 @@ def run_single_seed(config: OracleRunConfig, seed: int) -> SeedResult:
     trajectory: list[dict[str, Any]] = []
     argmax_history = [int(np.argmax(policy))]
     policy_history = [policy.copy()]
+    labels = arm_labels(instance.num_arms)
 
     for step in range(1, config.iterations + 1):
         proposal_probs = proposal_distribution(
@@ -114,13 +122,17 @@ def run_single_seed(config: OracleRunConfig, seed: int) -> SeedResult:
             temperature=config.temperature,
         )
         proposal = sample_proposal(proposal_probs, rng)
-        pgen = _resolve_pgen(config, p_star, policy, instance.best_arm)
+        pgen, contaminating_arm = _resolve_pgen(config, p_star, policy, instance.best_arm)
         feedback = sample_feedback(pgen, proposal, config.alpha, config.beta, rng)
         teacher = exact_teacher_distribution(policy, proposal, feedback, config.alpha, config.beta)
 
         kl_before = kl_divergence(p_star, policy)
+        predicted_forward_decrement = None
         if config.divergence == "forward":
             next_policy = forward_branch_update(policy, pgen, proposal, config.alpha, config.beta)
+            predicted_forward_decrement = bernoulli_kl(float(pgen[proposal]), float(policy[proposal])) - bernoulli_kl(
+                float(pgen[proposal]), float(next_policy[proposal])
+            )
         elif config.divergence == "reverse":
             next_policy = reverse_branch_update(policy, pgen, proposal, config.alpha, config.beta)
         else:
@@ -129,7 +141,11 @@ def run_single_seed(config: OracleRunConfig, seed: int) -> SeedResult:
 
         record = {
             "step": step,
+            "instance_name": config.instance_name,
+            "instance_best_arm": instance.best_arm,
+            "instance_best_arm_label": labels[instance.best_arm],
             "proposal": proposal,
+            "proposal_label": labels[proposal],
             "feedback": feedback,
             "proposal_probs": proposal_probs.tolist(),
             "policy_before": policy.tolist(),
@@ -137,11 +153,15 @@ def run_single_seed(config: OracleRunConfig, seed: int) -> SeedResult:
             "p_star": p_star.tolist(),
             "pgen": pgen.tolist(),
             "teacher": teacher.tolist(),
+            "q_exact": teacher.tolist(),
+            "contaminating_arm": contaminating_arm,
             "feedback_confirmation_probability": feedback_confirmation_probability(
                 pgen, proposal, config.alpha, config.beta
             ),
             "kl_to_p_star_before": kl_before,
             "kl_to_p_star_after": kl_after,
+            "observed_kl_decrement": kl_before - kl_after,
+            "predicted_forward_decrement": predicted_forward_decrement,
             "l1_to_p_star_after": l1_distance(next_policy, p_star),
             "best_arm_probability_after": float(next_policy[instance.best_arm]),
             "best_arm_accuracy_after": best_arm_accuracy(next_policy, instance.best_arm),
