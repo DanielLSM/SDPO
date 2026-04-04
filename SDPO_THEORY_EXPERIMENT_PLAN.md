@@ -8,11 +8,11 @@ The appendix frames these as **best-arm identification** experiments, which is w
 
 For this repo, we should separate the human-facing name from the implementation slug:
 
-- **Human-facing name:** **SDPO theory experiments**
-- **Descriptive alternate label:** **one-bit feedback bandit experiments**
-- **Code/package slug:** `one_bit_sdpo`
+- **Human-facing name:** **multi_bit_SDPO**
+- **Descriptive long-form label:** **SDPO theory experiments**
+- **Code/package slug:** `multi_bit_sdpo`
 
-That keeps the docs readable while giving the implementation a short, concrete name.
+Even though the first appendix protocol uses one-bit feedback, the project name should stay broader so it can cover richer feedback variants later.
 
 ## High-level recommendation
 
@@ -186,7 +186,7 @@ A cleaner merged layout is to keep everything under a dedicated experiment packa
 SDPO/
 ├── SDPO_THEORY_EXPERIMENT_PLAN.md
 ├── experiments/
-│   └── one_bit_sdpo/
+│   └── multi_bit_sdpo/
 │       ├── README.md
 │       ├── instances.py
 │       ├── posterior.py
@@ -197,7 +197,7 @@ SDPO/
 │       ├── metrics.py
 │       ├── runner.py
 │       ├── plots.py
-│       ├── run_one_bit_sdpo.py
+│       ├── run_multi_bit_sdpo.py
 │       ├── config/
 │       └── scripts/
 └── tests/
@@ -209,7 +209,7 @@ SDPO/
 
 Why this is better:
 
-- `experiments/one_bit_sdpo/` gives the work a concrete home
+- `experiments/multi_bit_sdpo/` gives the work a concrete home
 - oracle logic, prompt logic, runners, and plots stay together
 - it still remains clearly separate from the generic PPO trainer
 - tests stay cheap and CPU-oriented
@@ -254,7 +254,7 @@ For the LLM-linked phase, also log:
 - restricted label-only probability extraction
 - one-bit feedback simulation
 - paper-specific metrics and plots
-- the dedicated `one_bit_sdpo` runner
+- the dedicated `multi_bit_sdpo` runner
 
 ## Suggested initial instance set
 
@@ -287,7 +287,7 @@ These are enough to expose:
 
 The right first milestone is:
 
-- build a dedicated `experiments/one_bit_sdpo/` theory harness
+- build a dedicated `experiments/multi_bit_sdpo/` theory harness
 - implement the oracle dynamics first
 - run experiments **1, 2, 4, 5** first
 - add reverse-KL after that
