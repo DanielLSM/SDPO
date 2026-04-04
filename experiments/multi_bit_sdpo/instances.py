@@ -26,12 +26,12 @@ class GaussianBanditInstance:
 
 
 PRESET_INSTANCES: dict[str, GaussianBanditInstance] = {
-    "Easy-2": GaussianBanditInstance(name="Easy-2", means=(0.8, 0.2), pulls_per_arm=15),
+    "Easy-2": GaussianBanditInstance(name="Easy-2", means=(0.8, 0.2), pulls_per_arm=20),
     "Hard-2": GaussianBanditInstance(name="Hard-2", means=(0.52, 0.48), pulls_per_arm=20),
     "Medium-5": GaussianBanditInstance(
         name="Medium-5",
         means=(0.70, 0.50, 0.30, 0.20, 0.10),
-        pulls_per_arm=20,
+        pulls_per_arm=15,
     ),
     "Hard-5": GaussianBanditInstance(
         name="Hard-5",
