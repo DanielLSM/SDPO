@@ -1,0 +1,15 @@
+{
+  "experiment": "forward_convergence",
+  "instance": "Easy-2",
+  "divergence": "forward",
+  "proposal_kind": "epsilon_greedy",
+  "epsilon": 0.1,
+  "temperature": 1.0,
+  "alpha": 1.0,
+  "beta": 0.0,
+  "iterations": 300,
+  "num_mc": 200000,
+  "pgen_mode": "truth",
+  "initial_policy": "uniform",
+  "seeds": [0, 1, 2]
+}
