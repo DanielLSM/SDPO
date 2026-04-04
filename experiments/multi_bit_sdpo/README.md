@@ -28,6 +28,7 @@ The LLM-conditioned phase is intentionally left for later, after the oracle path
 - `runner.py` — configurable JSONL/summary oracle runner
 - `run_oracle_experiments.py` — paper-default sweep driver with CSV export
 - `plots.py` — lightweight plotting helper
+- `gpu_smoke.py` — first GPU smoke layer for restricted label-logit extraction
 - `scripts/` — shell wrappers for common runs
 
 ## Example usage
@@ -70,7 +71,20 @@ Informativeness sweep starter:
 bash experiments/multi_bit_sdpo/scripts/run_informativeness_sweep.sh
 ```
 
+First GPU smoke layer (tiny model load + restricted label logits):
+
+```bash
+bash experiments/multi_bit_sdpo/scripts/run_gpu_smoke.sh
+```
+
+This runs a tiny LLM-side check that:
+- loads an instruct model onto GPU
+- validates that arm labels are single tokenizer tokens
+- computes restricted next-token probabilities over arm labels for the base prompt
+- recomputes them for positive and negative conditioned prompts
+
 ## Notes
 
 - The project name is `multi_bit_sdpo`, even though the first oracle protocol currently uses one-bit feedback. The name is intentionally broader so richer feedback variants can live in the same harness later.
 - The current runner uses the **branchwise oracle update** driven by the sampled proposal. That matches the stochastic-iteration viewpoint used in the theory note.
+- `gpu_smoke.py` is intentionally a smoke layer, not the full training loop: it only checks model loading, label-token extraction, and conditioned-vs-base next-token distributions on GPU.
