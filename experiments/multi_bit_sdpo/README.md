@@ -12,7 +12,7 @@ This first implementation covers the **exact oracle dynamics** on CPU:
 - epsilon-greedy and temperature-plus-epsilon proposal rules
 - one-bit feedback simulation with `(alpha, beta)`
 - exact forward-KL and reverse-KL oracle branch updates
-- JSONL logging and summary output
+- JSONL logging, summary output, and CSV sweep export
 - CPU tests for the key theory identities
 
 The LLM-conditioned phase is intentionally left for later, after the oracle path is trusted.
@@ -25,7 +25,8 @@ The LLM-conditioned phase is intentionally left for later, after the oracle path
 - `feedback.py` — feedback channel and misalignment helpers
 - `oracle.py` — exact teacher and oracle updates
 - `prompts.py` — prompt helpers for the later LLM phase
-- `runner.py` — CLI entrypoint for oracle experiments
+- `runner.py` — configurable single-run CLI with JSONL trajectories
+- `run_oracle_experiments.py` — paper-default sweep driver with CSV export
 - `plots.py` — lightweight plotting helper
 - `scripts/` — shell wrappers for common runs
 
@@ -34,22 +35,21 @@ The LLM-conditioned phase is intentionally left for later, after the oracle path
 From the repo root:
 
 ```bash
-python3 -m experiments.multi_bit_sdpo.runner \
+python3 experiments/multi_bit_sdpo/run_oracle_experiments.py \
+  --experiment forward_convergence \
+  --num-seeds 3
+```
+
+Configurable single run with JSONL output:
+
+```bash
+python3 experiments/multi_bit_sdpo/runner.py \
   --experiment forward_convergence \
   --instance Easy-2 \
   --iterations 300 \
   --alpha 1.0 \
   --beta 0.0 \
   --seeds 0 1 2
-```
-
-Compatibility entrypoint:
-
-```bash
-python3 experiments/multi_bit_sdpo/run_oracle_experiments.py \
-  --experiment forward_convergence \
-  --instance Easy-2 \
-  --iterations 300
 ```
 
 Truth-driven forward KL with the appendix-style defaults:
@@ -74,4 +74,5 @@ bash experiments/multi_bit_sdpo/scripts/run_informativeness_sweep.sh
 
 - The project name is `multi_bit_sdpo`, even though the first oracle protocol currently uses one-bit feedback. The name is intentionally broader so richer feedback variants can live in the same harness later.
 - The current runner uses the **branchwise oracle update** driven by the sampled proposal. That matches the stochastic-iteration viewpoint used in the theory note.
+- Both entrypoints are runnable directly from the repo root with plain `python3`; no `uv` wrapper is required.
 - The CPU tests live under `tests/utils/` in this branch so they satisfy the repo's test-layout sanity checks.

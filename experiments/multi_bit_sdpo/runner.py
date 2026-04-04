@@ -35,6 +35,7 @@ if __package__ in (None, ""):
         reverse_branch_update,
     )
     from experiments.multi_bit_sdpo.posterior import estimate_oracle_posterior, sample_exploration_summary  # type: ignore
+    from experiments.multi_bit_sdpo.prompts import arm_labels  # type: ignore
     from experiments.multi_bit_sdpo.proposals import proposal_distribution, sample_proposal  # type: ignore
 else:
     from .feedback import build_misaligned_distribution, feedback_confirmation_probability, sample_feedback
@@ -50,6 +51,7 @@ else:
     )
     from .oracle import bernoulli_kl, exact_teacher_distribution, forward_branch_update, reverse_branch_update
     from .posterior import estimate_oracle_posterior, sample_exploration_summary
+    from .prompts import arm_labels
     from .proposals import proposal_distribution, sample_proposal
 
 
@@ -110,17 +112,23 @@ def _initial_policy(mode: str, p_star: np.ndarray, posterior_means: tuple[float,
     raise ValueError(f"Unknown initial policy mode '{mode}'")
 
 
-def _resolve_pgen(config: OracleRunConfig, p_star: np.ndarray, policy: np.ndarray, instance_best_arm: int) -> np.ndarray:
+def _resolve_pgen(
+    config: OracleRunConfig,
+    p_star: np.ndarray,
+    policy: np.ndarray,
+    instance_best_arm: int,
+) -> tuple[np.ndarray, int | None]:
     if config.pgen_mode == "truth":
-        return p_star.copy()
+        return p_star.copy(), None
     if config.pgen_mode == "self":
-        return policy.copy()
+        return policy.copy(), None
     if config.pgen_mode == "misaligned":
         contaminating_arm = config.contaminating_arm
         if contaminating_arm is None:
-            candidates = [idx for idx in range(len(p_star)) if idx != instance_best_arm]
-            contaminating_arm = candidates[-1] if candidates else instance_best_arm
-        return build_misaligned_distribution(p_star, config.misalignment_lambda, contaminating_arm)
+            descending = np.argsort(-p_star)
+            candidates = [int(idx) for idx in descending if int(idx) != instance_best_arm]
+            contaminating_arm = candidates[0] if candidates else instance_best_arm
+        return build_misaligned_distribution(p_star, config.misalignment_lambda, contaminating_arm), contaminating_arm
     raise ValueError(f"Unknown pgen_mode '{config.pgen_mode}'")
 
 
@@ -134,6 +142,7 @@ def run_single_seed(config: OracleRunConfig, seed: int) -> SeedResult:
     trajectory: list[dict[str, Any]] = []
     argmax_history = [int(np.argmax(policy))]
     policy_history = [policy.copy()]
+    labels = arm_labels(instance.num_arms)
 
     for step in range(1, config.iterations + 1):
         proposal_probs = proposal_distribution(
@@ -143,48 +152,54 @@ def run_single_seed(config: OracleRunConfig, seed: int) -> SeedResult:
             temperature=config.temperature,
         )
         proposal = sample_proposal(proposal_probs, rng)
-        pgen = _resolve_pgen(config, p_star, policy, instance.best_arm)
+        pgen, contaminating_arm = _resolve_pgen(config, p_star, policy, instance.best_arm)
         feedback = sample_feedback(pgen, proposal, config.alpha, config.beta, rng)
-        teacher = exact_teacher_distribution(policy, proposal, feedback, config.alpha, config.beta)
+        q_exact = exact_teacher_distribution(policy, proposal, feedback, config.alpha, config.beta)
 
         kl_before = kl_divergence(p_star, policy)
+        predicted_forward_decrement = None
         if config.divergence == "forward":
             next_policy = forward_branch_update(policy, pgen, proposal, config.alpha, config.beta)
-            predicted_forward_decrement = bernoulli_kl(pgen[proposal], policy[proposal]) - bernoulli_kl(
-                pgen[proposal], next_policy[proposal]
+            predicted_forward_decrement = bernoulli_kl(float(pgen[proposal]), float(policy[proposal])) - bernoulli_kl(
+                float(pgen[proposal]),
+                float(next_policy[proposal]),
             )
         elif config.divergence == "reverse":
             next_policy = reverse_branch_update(policy, pgen, proposal, config.alpha, config.beta)
-            predicted_forward_decrement = None
         else:
             raise ValueError(f"Unknown divergence '{config.divergence}'")
         kl_after = kl_divergence(p_star, next_policy)
 
         record = {
             "step": step,
+            "instance_name": config.instance_name,
+            "best_arm": instance.best_arm,
+            "best_arm_label": labels[instance.best_arm],
             "proposal": proposal,
+            "proposal_label": labels[proposal],
             "feedback": feedback,
             "proposal_probs": proposal_probs.tolist(),
             "policy_before": policy.tolist(),
             "policy_after": next_policy.tolist(),
             "p_star": p_star.tolist(),
             "pgen": pgen.tolist(),
-            "teacher": teacher.tolist(),
+            "teacher": q_exact.tolist(),
+            "q_exact": q_exact.tolist(),
+            "contaminating_arm": contaminating_arm,
             "feedback_confirmation_probability": feedback_confirmation_probability(
                 pgen, proposal, config.alpha, config.beta
             ),
             "kl_to_p_star_before": kl_before,
             "kl_to_p_star_after": kl_after,
+            "observed_kl_decrement": kl_before - kl_after,
+            "predicted_forward_decrement": predicted_forward_decrement,
             "l1_to_p_star_after": l1_distance(next_policy, p_star),
             "best_arm_probability_after": float(next_policy[instance.best_arm]),
             "best_arm_accuracy_after": best_arm_accuracy(next_policy, instance.best_arm),
             "step_size_l1": l1_distance(next_policy, policy),
-            "teacher_student_gap_tv": total_variation(teacher, policy),
+            "teacher_student_gap_tv": total_variation(q_exact, policy),
             "simplex_boundary_distance_after": simplex_boundary_distance(next_policy),
         }
-        if predicted_forward_decrement is not None:
-            record["predicted_forward_decrement"] = predicted_forward_decrement
-            record["observed_kl_decrement"] = kl_before - kl_after
         trajectory.append(record)
         policy = next_policy
         argmax_history.append(int(np.argmax(policy)))
