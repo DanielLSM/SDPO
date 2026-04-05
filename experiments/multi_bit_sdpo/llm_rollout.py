@@ -32,7 +32,12 @@ if __package__ in (None, ""):
     )
     from experiments.multi_bit_sdpo.oracle import exact_teacher_distribution  # type: ignore
     from experiments.multi_bit_sdpo.posterior import estimate_oracle_posterior, sample_exploration_summary  # type: ignore
-    from experiments.multi_bit_sdpo.prompts import arm_labels, build_history_prompt, validate_single_token_labels  # type: ignore
+    from experiments.multi_bit_sdpo.prompts import (  # type: ignore
+        arm_labels,
+        build_base_prompt,
+        build_single_message_conditioned_prompt,
+        validate_single_token_labels,
+    )
     from experiments.multi_bit_sdpo.proposals import proposal_distribution, sample_proposal  # type: ignore
 else:
     from .feedback import build_misaligned_distribution, feedback_confirmation_probability, sample_feedback
@@ -49,7 +54,7 @@ else:
     )
     from .oracle import exact_teacher_distribution
     from .posterior import estimate_oracle_posterior, sample_exploration_summary
-    from .prompts import arm_labels, build_history_prompt, validate_single_token_labels
+    from .prompts import arm_labels, build_base_prompt, build_single_message_conditioned_prompt, validate_single_token_labels
     from .proposals import proposal_distribution, sample_proposal
 
 
@@ -125,9 +130,19 @@ def _evaluate_policy(
     config: LLMRolloutConfig,
     summary: Any,
     label_token_ids: list[int],
-    history: list[tuple[int, int]],
+    proposal: int | None = None,
+    feedback: int | None = None,
 ) -> tuple[Any, dict[str, Any], list[dict[str, str]]]:
-    messages = build_history_prompt(summary, history=history, alpha=config.alpha, beta=config.beta)
+    if proposal is None or feedback is None:
+        messages = build_base_prompt(summary)
+    else:
+        messages = build_single_message_conditioned_prompt(
+            summary,
+            proposal=proposal,
+            feedback=feedback,
+            alpha=config.alpha,
+            beta=config.beta,
+        )
     evaluation = restricted_next_token_distribution(
         model,
         tokenizer,
@@ -158,7 +173,7 @@ def run_single_seed(
     label_token_ids = [token_id for _, token_id in label_pairs]
 
     history: list[tuple[int, int]] = []
-    policy, evaluation, messages = _evaluate_policy(model, tokenizer, torch, np, config, exploration, label_token_ids, history)
+    policy, evaluation, messages = _evaluate_policy(model, tokenizer, torch, np, config, exploration, label_token_ids)
 
     trajectory: list[dict[str, Any]] = []
     argmax_history = [int(np.argmax(policy))]
@@ -185,7 +200,8 @@ def run_single_seed(
             config,
             exploration,
             label_token_ids,
-            next_history,
+            proposal=proposal,
+            feedback=feedback,
         )
 
         kl_before = kl_divergence(p_star, policy)

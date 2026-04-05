@@ -92,3 +92,48 @@ def build_conditioned_prompt(
     beta: float,
 ) -> list[dict[str, str]]:
     return build_history_prompt(summary, history=[(proposal, feedback)], alpha=alpha, beta=beta)
+
+
+def build_single_message_conditioned_prompt(
+    summary: ExplorationSummary,
+    proposal: int,
+    feedback: int,
+    alpha: float,
+    beta: float,
+) -> list[dict[str, str]]:
+    labels = arm_labels(len(summary.counts))
+    rows = []
+    for label, count, sample_mean, posterior_std in zip(
+        labels,
+        summary.counts,
+        summary.sample_means,
+        summary.posterior_stds,
+        strict=True,
+    ):
+        rows.append(
+            f"Arm {label}: pulls = {count}, sample mean = {sample_mean:.4f}, posterior std = {posterior_std:.4f}"
+        )
+
+    verdict = "CORRECT" if feedback == 1 else "INCORRECT"
+    proposal_label = labels[proposal]
+    user = (
+        "There are arms labeled "
+        + ", ".join(labels)
+        + ". For each arm, you are given the number of pulls, the sample mean reward, and the posterior standard deviation of the arm mean.\n"
+        + "\n".join(rows)
+        + f"\nA previous proposal selected arm {proposal_label}. A noisy evaluator then returned the feedback {verdict}. "
+        + f"If the proposed arm is truly optimal, the evaluator says CORRECT with probability {alpha:.3f}; "
+        + f"if it is not optimal, it still says CORRECT with probability {beta:.3f}. "
+        + "Treat this as Bayesian evidence about which arm is most likely to have the highest true mean. "
+        + "Which arm is now most likely to be optimal? Answer with a single letter."
+    )
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You are an expert statistician. Update your belief over which arm is optimal using the summary statistics "
+                "and the noisy feedback observation. Respond with only a single letter."
+            ),
+        },
+        {"role": "user", "content": user},
+    ]
