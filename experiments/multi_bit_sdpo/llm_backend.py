@@ -72,6 +72,30 @@ def render_messages(tokenizer: Any, messages: list[dict[str, str]]) -> str:
     return "\n\n".join(parts)
 
 
+def encode_messages(
+    tokenizer: Any,
+    messages: list[dict[str, str]],
+    device: str,
+) -> tuple[str, dict[str, Any]]:
+    prompt_text = render_messages(tokenizer, messages)
+    encoded = tokenizer(prompt_text, return_tensors="pt")
+    encoded = {key: value.to(device) for key, value in encoded.items()}
+    return prompt_text, encoded
+
+
+def restricted_next_token_logits(
+    model: Any,
+    tokenizer: Any,
+    messages: list[dict[str, str]],
+    label_token_ids: list[int],
+    device: str,
+) -> tuple[str, Any]:
+    prompt_text, encoded = encode_messages(tokenizer, messages, device)
+    outputs = model(**encoded)
+    restricted_logits = outputs.logits[:, -1, label_token_ids]
+    return prompt_text, restricted_logits
+
+
 def restricted_next_token_distribution(
     model: Any,
     tokenizer: Any,
@@ -80,9 +104,7 @@ def restricted_next_token_distribution(
     device: str,
     torch: Any,
 ) -> dict[str, Any]:
-    prompt_text = render_messages(tokenizer, messages)
-    encoded = tokenizer(prompt_text, return_tensors="pt")
-    encoded = {key: value.to(device) for key, value in encoded.items()}
+    prompt_text, encoded = encode_messages(tokenizer, messages, device)
 
     with torch.no_grad():
         outputs = model(**encoded)

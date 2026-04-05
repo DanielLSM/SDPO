@@ -95,12 +95,29 @@ This runs a first iterative prompt-conditioned probe that:
 - starts from the base summary prompt
 - samples proposals from the current restricted label distribution
 - samples noisy feedback from the chosen `pgen` mode
-- appends proposal/feedback history to the chat transcript
 - re-evaluates the next restricted label distribution after each round
+- optionally takes a few interleaved gradient steps toward the exact restricted teacher (`--interleaved-grad-steps N`)
+
+Tiny frozen-vs-interleaved comparison on the recommended small setting:
+
+```bash
+python3 -m experiments.multi_bit_sdpo.llm_rollout \
+  --model Qwen/Qwen2.5-1.5B-Instruct \
+  --instance Easy-2 \
+  --proposal-kind epsilon_greedy \
+  --epsilon 0.1 \
+  --alpha 0.9 \
+  --beta 0.1 \
+  --iterations 4 \
+  --seeds 0 \
+  --interleaved-grad-steps 2 \
+  --interleaved-lr 5e-6 \
+  --compare-modes
+```
 
 ## Notes
 
 - The project name is `multi_bit_sdpo`, even though the first oracle protocol currently uses one-bit feedback. The name is intentionally broader so richer feedback variants can live in the same harness later.
 - The current runner uses the **branchwise oracle update** driven by the sampled proposal. That matches the stochastic-iteration viewpoint used in the theory note.
 - `gpu_smoke.py` is intentionally a smoke layer, not the full training loop: it only checks model loading, label-token extraction, and conditioned-vs-base next-token distributions on GPU.
-- `llm_rollout.py` is the first multi-step bridge between the oracle harness and a real model: it performs repeated prompt conditioning on proposal/feedback history, but it does **not** update model weights or integrate with the PPO trainer yet.
+- `llm_rollout.py` now supports two tiny modes: a frozen prompt-only rollout (`--interleaved-grad-steps 0`) and a minimal interleaved-training sanity check that takes a few optimizer steps after each feedback round to match the exact restricted teacher distribution (`--interleaved-grad-steps N`). This is still only a lightweight proxy, not the full PPO/trainer loop.
