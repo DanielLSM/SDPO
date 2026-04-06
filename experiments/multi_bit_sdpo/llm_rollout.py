@@ -81,7 +81,7 @@ class LLMRolloutConfig:
     interleaved_lr: float = 5e-6
     interleaved_optimizer: str = "adamw"
     train_prompt_variant: str = "single_message"
-    train_objective: str = "kl"
+    train_objective: str = "forward_kl"
     freeze_embeddings: bool = True
     freeze_norms: bool = True
     experiment: str = "llm_conditioned_rollout"
@@ -215,6 +215,7 @@ def _train_on_teacher_distribution(
 ) -> dict[str, Any]:
     messages = _build_messages(config, summary, proposal=proposal, feedback=feedback)
     teacher_tensor = torch.tensor(teacher, device=config.device, dtype=torch.float32).unsqueeze(0)
+    teacher_log_probs = teacher_tensor.clamp_min(1e-12).log()
     losses: list[float] = []
     model.train()
     for _ in range(config.interleaved_grad_steps):
@@ -226,11 +227,12 @@ def _train_on_teacher_distribution(
             label_token_ids,
             config.device,
         )
-        log_probs = torch.log_softmax(restricted_logits.float(), dim=-1)
-        if config.train_objective == "kl":
-            loss = torch.sum(teacher_tensor * (teacher_tensor.clamp_min(1e-12).log() - log_probs), dim=-1).mean()
-        elif config.train_objective == "cross_entropy":
-            loss = -(teacher_tensor * log_probs).sum(dim=-1).mean()
+        student_log_probs = torch.log_softmax(restricted_logits.float(), dim=-1)
+        student_probs = torch.softmax(restricted_logits.float(), dim=-1)
+        if config.train_objective == "forward_kl":
+            loss = torch.sum(teacher_tensor * (teacher_log_probs - student_log_probs), dim=-1).mean()
+        elif config.train_objective == "reverse_kl":
+            loss = torch.sum(student_probs * (student_log_probs - teacher_log_probs), dim=-1).mean()
         else:
             raise ValueError(f"Unsupported train objective '{config.train_objective}'")
         loss.backward()
@@ -507,7 +509,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--interleaved-lr", type=float, default=5e-6)
     parser.add_argument("--interleaved-optimizer", default="adamw", choices=["adamw", "sgd"])
     parser.add_argument("--train-prompt-variant", default="single_message", choices=["single_message"])
-    parser.add_argument("--train-objective", default="kl", choices=["kl", "cross_entropy"])
+    parser.add_argument("--train-objective", default="forward_kl", choices=["forward_kl", "reverse_kl"])
     parser.add_argument("--no-freeze-embeddings", action="store_true")
     parser.add_argument("--no-freeze-norms", action="store_true")
     parser.add_argument("--compare-modes", action="store_true")

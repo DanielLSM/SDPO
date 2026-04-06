@@ -96,7 +96,7 @@ This runs a first iterative prompt-conditioned probe that:
 - samples proposals from the current restricted label distribution
 - samples noisy feedback from the chosen `pgen` mode
 - re-evaluates the next restricted label distribution after each round
-- optionally takes a few interleaved gradient steps toward the exact restricted teacher (`--interleaved-grad-steps N`)
+- optionally takes a few interleaved gradient steps toward the exact restricted teacher (`--interleaved-grad-steps N`) using either forward KL (`--train-objective forward_kl`) or reverse KL (`--train-objective reverse_kl`)
 
 Tiny frozen-vs-interleaved comparison on the recommended small setting:
 
@@ -112,6 +112,7 @@ python3 -m experiments.multi_bit_sdpo.llm_rollout \
   --seeds 0 \
   --interleaved-grad-steps 2 \
   --interleaved-lr 5e-6 \
+  --train-objective forward_kl \
   --compare-modes
 ```
 
